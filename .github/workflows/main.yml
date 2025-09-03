@@ -103,7 +103,7 @@ jobs:
               exit 1
           }
           Write-Host "TCP connectivity successful!"
-      - name: Maintain Connection
+      - name: Display RDP Connection Info
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
@@ -112,8 +112,19 @@ jobs:
           Write-Host "User has full Admin privileges and Full Control permissions"
           Write-Host "==================`n"
           
-          # Keep runner active indefinitely (or until manually cancelled)
-          while ($true) {
-              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
-              Start-Sleep -Seconds 300
+          # Display a message that the workflow will end automatically
+          Write-Host "Workflow will complete in 5 minutes. Use this time to connect via RDP."
+          Write-Host "To extend the session, manually restart the workflow."
+      - name: Wait for RDP Connection
+        run: |
+          # Wait for 5 minutes (300 seconds) before completing the workflow
+          $timeout = 300
+          $startTime = Get-Date
+          
+          while (((Get-Date) - $startTime).TotalSeconds -lt $timeout) {
+              $remaining = [math]::Round($timeout - ((Get-Date) - $startTime).TotalSeconds)
+              Write-Host "Waiting for RDP connection... $remaining seconds remaining"
+              Start-Sleep -Seconds 10
           }
+          
+          Write-Host "Workflow completed. RDP session is still available until the runner terminates."
