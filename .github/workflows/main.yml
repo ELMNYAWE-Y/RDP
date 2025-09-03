@@ -1,10 +1,13 @@
 name: RDP
+
 on:
   workflow_dispatch:
+
 jobs:
   secure-rdp:
     runs-on: windows-latest
     timeout-minutes: 3600
+
     steps:
       - name: Configure Core RDP Settings
         run: |
@@ -15,55 +18,33 @@ jobs:
                              -Name "UserAuthentication" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
                              -Name "SecurityLayer" -Value 0 -Force
+
           # Remove any existing rule with the same name to avoid duplication
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
           
           # For testing, allow any incoming connection on port 3389
           netsh advfirewall firewall add rule name="RDP-Tailscale" `
             dir=in action=allow protocol=TCP localport=3389
+
           # (Optional) Restart the Remote Desktop service to ensure changes take effect
           Restart-Service -Name TermService -Force
-      - name: Create RDP User with Admin Privileges
+
+      - name: Create RDP User with Secure Password
         run: |
           # Use fixed password instead of generating random one
-          $password = "Myyaa1212#"
+          $password = "Myyaa1212"
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          
-          # Check if user already exists and remove it to avoid conflicts
-          if (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue) {
-            Remove-LocalUser -Name "RDP"
-          }
-          
-          # Create new user with specified password
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires -FullName "RDP Admin User" -Description "Admin user with full control privileges"
-          
-          # Add user to Administrators group for full admin privileges
+          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          
-          # Add user to Remote Desktop Users group for RDP access
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           
-          # Grant full control privileges on system directories
-          $systemDirs = @("C:\", "C:\Windows", "C:\Program Files", "C:\Program Files (x86)")
-          foreach ($dir in $systemDirs) {
-            if (Test-Path $dir) {
-              $acl = Get-Acl -Path $dir
-              $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("RDP", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
-              $acl.SetAccessRule($rule)
-              Set-Acl -Path $dir -AclObject $acl
-            }
-          }
-          
-          # Set environment variable with credentials
           echo "RDP_CREDS=User: RDP | Password: $password" >> $env:GITHUB_ENV
           
-          # Verify user creation
           if (-not (Get-LocalUser -Name "RDP")) {
               Write-Error "User creation failed"
               exit 1
           }
-          
-          Write-Host "RDP user created with full admin privileges and full control permissions"
+
       - name: Install Tailscale
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
@@ -72,6 +53,7 @@ jobs:
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item $installerPath -Force
+
       - name: Establish Tailscale Connection
         run: |
           # Bring up Tailscale with the provided auth key and set a unique hostname
@@ -103,28 +85,17 @@ jobs:
               exit 1
           }
           Write-Host "TCP connectivity successful!"
-      - name: Display RDP Connection Info
+
+      - name: Maintain Connection
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: RDP"
-          Write-Host "Password: Myyaa1212#"
-          Write-Host "User has full Admin privileges and Full Control permissions"
+          Write-Host "Password: Myyaa1212"
           Write-Host "==================`n"
           
-          # Display a message that the workflow will end automatically
-          Write-Host "Workflow will complete in 5 minutes. Use this time to connect via RDP."
-          Write-Host "To extend the session, manually restart the workflow."
-      - name: Wait for RDP Connection
-        run: |
-          # Wait for 5 minutes (300 seconds) before completing the workflow
-          $timeout = 300
-          $startTime = Get-Date
-          
-          while (((Get-Date) - $startTime).TotalSeconds -lt $timeout) {
-              $remaining = [math]::Round($timeout - ((Get-Date) - $startTime).TotalSeconds)
-              Write-Host "Waiting for RDP connection... $remaining seconds remaining"
-              Start-Sleep -Seconds 10
+          # Keep runner active indefinitely (or until manually cancelled)
+          while ($true) {
+              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
+              Start-Sleep -Seconds 300
           }
-          
-          Write-Host "Workflow completed. RDP session is still available until the runner terminates."
