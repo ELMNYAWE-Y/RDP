@@ -108,4 +108,3 @@ jobs:
               Write-Host "[$(Get-Date)] RDP نشط - استخدم Ctrl+C في سير العمل للإنهاء"
               Start-Sleep -Seconds 300
           }
-          
